@@ -13,7 +13,7 @@ const fruitsData = [
     { en: "Pineapple", fr: "Ananas", emoji: "🍍", level: 1 },
     { en: "Mango", fr: "Mangue", emoji: "🥭", level: 1 },
     { en: "Pear", fr: "Poire", emoji: "🍐", level: 1 },
-    { en: "Raspberry", fr: "Framboise", emoji: "🔴", level: 1 }, // Option A validée
+    { en: "Raspberry", fr: "Framboise", emoji: "🔴", level: 1 },
     { en: "Blueberry", fr: "Myrtille", emoji: "🫐", level: 1 },
     { en: "Kiwi", fr: "Kiwi", emoji: "🥝", level: 1 },
     { en: "Plum", fr: "Prune", emoji: "🟣", level: 1 }, 
@@ -72,11 +72,12 @@ let currentStreak = 0, maxStreak = 0, totalPoints = 0;
 let highScores = { quiz: 0, speak: 0, timeattack: 0 };
 let favoriteFruits = [];
 let errorHistory = []; 
-let unlockedBadges = []; // Stocke les IDs des badges obtenus
+let unlockedBadges = []; 
 let audioSpeed = 1.0;
 let filterOnlyFavs = false;
-let searchDirection = 'EN_FR'; 
-let selectedVocabularyLevel = 1; // Niveau de liste actuellement sélectionné par l'élève
+let searchDirection = 'EN_FR';
+let globalAudioCtx = null; // Instance unique partagée 
+let selectedVocabularyLevel = 1; 
 
 // --- CONFIGURATION DES BADGES ---
 const badgesDatabase = [
@@ -86,21 +87,14 @@ const badgesDatabase = [
     { id: "polyglotte", title: "Polyglotte", desc: "Débloquer le niveau 2 de vocabulaire", icon: "🗣️", color: "bg-purple-500" }
 ];
 
-// --- ALGORITHME DE RÉPÉTITION ESPACÉE (Spaced Repetition) ---
-// Récupère les mots disponibles selon le niveau choisi, mais injecte 35% de chances
-// de faire réapparaître un mot raté présent dans le carnet de révision de l'élève.
+// --- ALGORITHME DE RÉPÉTITION ESPACÉE ---
 function getNextExerciseWord() {
     const currentLevelWords = fruitsData.filter(f => f.level === parseInt(selectedVocabularyLevel));
-    
-    // Filtrer les erreurs qui appartiennent au niveau actuel de l'élève
     const currentLevelErrors = errorHistory.filter(err => err.level === parseInt(selectedVocabularyLevel));
 
     if (currentLevelErrors.length > 0 && Math.random() < 0.35) {
-        // 35% de chance de piocher une révision ciblée
         return currentLevelErrors[Math.floor(Math.random() * currentLevelErrors.length)];
     }
-    
-    // Sinon tirage aléatoire classique dans le niveau choisi
     return currentLevelWords[Math.floor(Math.random() * currentLevelWords.length)];
 }
 
@@ -109,49 +103,126 @@ function checkAndUnlockBadge(badgeId) {
     if (!unlockedBadges.includes(badgeId)) {
         unlockedBadges.push(badgeId);
         localStorage.setItem('oe_unlocked_badges', JSON.stringify(unlockedBadges));
-        // Animation festive ou alerte discrète gérée dans le relay
         triggerConfetti();
         if(typeof renderBadgesUI === 'function') renderBadgesUI();
     }
 }
 
-// --- MODULE AUDIO ---
-function playAudio(text) {
-    const encodedText = encodeURIComponent(text.toLowerCase());
-    const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodedText}`;
-    const audio = new Audio(audioUrl);
-    audio.playbackRate = audioSpeed;
-    audio.play().catch(() => {
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US';
-            utterance.rate = audioSpeed;
-            window.speechSynthesis.speak(utterance);
-        }
-    });
+// --- MODULE AUDIO DE HAUTE PRÉCISION (CORRIGÉ) ---
+let preferredVoice = null;
+
+// Fonction de sélection de la meilleure voix disponible sur l'appareil
+function initVoices() {
+    if (!('speechSynthesis' in window)) return;
+    
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length === 0) return; // Le navigateur n'est pas encore prêt
+
+    // Stratégie de sélection en 3 étapes :
+    // 1. On cherche une voix anglaise moderne (Google, Natural, Neural ou Premium)
+    let bestVoice = voices.find(voice => 
+        voice.lang.toLowerCase().startsWith('en') && 
+        (voice.name.includes('Google') || voice.name.includes('Natural') || voice.name.includes('Neural') || voice.name.includes('Premium'))
+    );
+
+    // 2. Si pas trouvé, on cherche une voix anglaise qui n'est PAS une vieille voix "Desktop" de Microsoft
+    if (!bestVoice) {
+        bestVoice = voices.find(voice => 
+            voice.lang.toLowerCase().startsWith('en') && !voice.name.includes('Desktop')
+        );
+    }
+
+    // 3. En dernier recours, on prend la première voix anglaise standard qui vient
+    if (!bestVoice) {
+        bestVoice = voices.find(voice => voice.lang.toLowerCase().startsWith('en'));
+    }
+
+    // On mémorise la voix pour éviter de refaire la recherche à chaque clic
+    if (bestVoice) {
+        preferredVoice = bestVoice;
+    }
 }
+
+// Écouteur crucial : déclenché dès que le navigateur a fini de charger sa base de données vocales
+if ('speechSynthesis' in window) {
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = initVoices;
+    }
+    initVoices(); // Premier essai immédiat au cas où elles seraient déjà prêtes
+}
+
+function setAudioSpeed(speed) {
+    audioSpeed = speed;
+    const btnNormal = document.getElementById('speed-normal');
+    const btnSlow = document.getElementById('speed-slow');
+    if (btnNormal && btnSlow) {
+        if (speed === 1.0) {
+            btnNormal.className = "px-2 py-1 bg-brandBlue text-white rounded font-bold";
+            btnSlow.className = "px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded flex items-center gap-1";
+        } else {
+            btnNormal.className = "px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded font-bold";
+            btnSlow.className = "px-2 py-1 bg-brandBlue text-white rounded flex items-center gap-1";
+        }
+    }
+}
+
+function playAudio(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel(); // Stoppe net toute lecture en cours
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        utterance.rate = audioSpeed;
+
+        // Si la voix n'a pas pu être choisie au démarrage, on fait une tentative de secours
+        if (!preferredVoice) initVoices();
+
+        if (preferredVoice) {
+            utterance.voice = preferredVoice;
+        }
+
+        window.speechSynthesis.speak(utterance);
+    } else {
+        // Fallback ultime si l'appareil ne supporte aucune synthèse vocale native
+        const encodedText = encodeURIComponent(text.toLowerCase());
+        const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodedText}`;
+        const audio = new Audio(audioUrl);
+        audio.playbackRate = audioSpeed;
+        audio.play().catch(e => console.log("Audio playback failed:", e));
+    }
+}
+
 
 function playSoundEffect(type) {
     if (!window.AudioContext && !window.webkitAudioContext) return;
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    
+    // Initialisation paresseuse au premier clic utilisateur
+    if (!globalAudioCtx) {
+        globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
+    // Sort de la mise en veille si le navigateur avait bloqué le flux audio
+    if (globalAudioCtx.state === 'suspended') {
+        globalAudioCtx.resume();
+    }
+
+    const osc = globalAudioCtx.createOscillator();
+    const gain = globalAudioCtx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(globalAudioCtx.destination);
 
     if (type === 'success') {
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        osc.start(); osc.stop(ctx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(523.25, globalAudioCtx.currentTime);
+        osc.frequency.setValueAtTime(659.25, globalAudioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.1, globalAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.3);
+        osc.start(); osc.stop(globalAudioCtx.currentTime + 0.3);
     } else if (type === 'fail') {
-        osc.frequency.setValueAtTime(196.00, ctx.currentTime);
-        osc.frequency.setValueAtTime(146.83, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-        osc.start(); osc.stop(ctx.currentTime + 0.4);
+        osc.frequency.setValueAtTime(196.00, globalAudioCtx.currentTime);
+        osc.frequency.setValueAtTime(146.83, globalAudioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.15, globalAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.4);
+        osc.start(); osc.stop(globalAudioCtx.currentTime + 0.4);
     }
 }
 
@@ -181,35 +252,78 @@ function removeError(englishName) {
     localStorage.setItem('oe_error_history', JSON.stringify(errorHistory));
 }
 
-// --- GESTION DE LA PROGRESSION (Calcul des niveaux) ---
+// --- GESTION DE LA PROGRESSION ---
 function getUserPlayerLevel() {
     return Math.floor(totalPoints / 150) + 1;
 }
 
 function updateLevelAndTitle() {
     const pLevel = getUserPlayerLevel();
-    document.getElementById('user-level').innerText = pLevel;
+    const levelEl = document.getElementById('user-level');
+    const titleEl = document.getElementById('user-title');
+    
+    if (levelEl) levelEl.innerText = pLevel;
 
     let title = "Novice des Fruits";
     if (pLevel >= 2) title = "Apprenti Fruitier";
     if (pLevel >= 3) title = "Verger Connaisseur";
     if (pLevel >= 5) {
         title = "Expert Botanique";
-        checkAndUnlockBadge("polyglotte"); // Débloque le Badge Niveau 5
+        checkAndUnlockBadge("polyglotte"); 
     }
     if (pLevel >= 10) title = "Maître des Vergers";
 
-    document.getElementById('user-title').innerText = title;
-    
-    // Appelle la mise à jour des cadenas visuels de l'interface si présente
-    if(typeof updateLevelLockUI === 'function') updateLevelLockUI();
+    if (titleEl) titleEl.innerText = title;
+    if (typeof updateLevelLockUI === 'function') updateLevelLockUI();
+}
+
+// --- MODULE DARK MODE (AJOUTÉ) ---
+function toggleDarkMode() {
+    const isDark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('oe_dark_mode', isDark);
+    const icon = document.getElementById('theme-icon');
+    if (icon) {
+        icon.className = isDark ? "fa-solid fa-sun text-yellow-300" : "fa-solid fa-moon text-yellow-300";
+    }
+}
+
+// --- RÉINITIALISATION DES STATISTIQUES (AJOUTÉ) ---
+function resetStats() {
+    if (confirm("Êtes-vous sûr de vouloir réinitialiser toutes vos statistiques et votre progression ?")) {
+        const keysToRemove = ['oe_total_points', 'oe_high_quiz', 'oe_high_speak', 'oe_high_timeattack', 'oe_max_streak', 'oe_fav_fruits', 'oe_error_history', 'oe_unlocked_badges'];
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+
+        totalPoints = 0;
+        highScores = { quiz: 0, speak: 0, timeattack: 0 };
+        maxStreak = 0;
+        currentStreak = 0;
+        errorHistory = [];
+        unlockedBadges = [];
+        favoriteFruits = [];
+
+        document.getElementById('total-points').innerText = totalPoints;
+        document.getElementById('streak-count').innerText = currentStreak;
+        document.getElementById('stat-high-quiz').innerText = 0;
+        document.getElementById('stat-high-speak').innerText = 0;
+        document.getElementById('stat-high-timeattack').innerText = 0;
+        document.getElementById('stat-max-streak').innerText = 0;
+
+        updateLevelAndTitle();
+
+        if (typeof renderDict === 'function') renderDict();
+        if (typeof updateFlashcard === 'function') updateFlashcard();
+        if (typeof renderBadgesUI === 'function') renderBadgesUI();
+        if (typeof renderErrorHistory === 'function') renderErrorHistory();
+
+        alert("Statistiques réinitialisées avec succès !");
+    }
 }
 
 // --- PERSISTENCE ---
 function saveStats() {
     localStorage.setItem('oe_total_points', totalPoints);
     localStorage.setItem('oe_high_quiz', highScores.quiz);
-    localStorage.setItem('oe_high_speak', highScores.speak); // Changé ici
+    localStorage.setItem('oe_high_speak', highScores.speak); 
     localStorage.setItem('oe_high_timeattack', highScores.timeattack);
     localStorage.setItem('oe_max_streak', maxStreak);
 }
@@ -217,7 +331,7 @@ function saveStats() {
 function loadStats() {
     totalPoints = parseInt(localStorage.getItem('oe_total_points')) || 0;
     highScores.quiz = parseInt(localStorage.getItem('oe_high_quiz')) || 0;
-    highScores.speak = parseInt(localStorage.getItem('oe_high_speak')) || 0; // Changé ici
+    highScores.speak = parseInt(localStorage.getItem('oe_high_speak')) || 0; 
     highScores.timeattack = parseInt(localStorage.getItem('oe_high_timeattack')) || 0;
     maxStreak = parseInt(localStorage.getItem('oe_max_streak')) || 0;
     favoriteFruits = JSON.parse(localStorage.getItem('oe_fav_fruits')) || [];
@@ -226,9 +340,12 @@ function loadStats() {
     
     if (localStorage.getItem('oe_dark_mode') === 'true') {
         document.documentElement.classList.add('dark');
-        document.getElementById('theme-icon').className = "fa-solid fa-sun text-yellow-300";
+        const icon = document.getElementById('theme-icon');
+        if (icon) icon.className = "fa-solid fa-sun text-yellow-300";
     }
 
-    document.getElementById('total-points').innerText = totalPoints;
+    const totalPointsEl = document.getElementById('total-points');
+    if (totalPointsEl) totalPointsEl.innerText = totalPoints;
+    
     updateLevelAndTitle();
 }

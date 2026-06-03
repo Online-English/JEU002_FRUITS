@@ -4,11 +4,13 @@ let isSlideshowActive = false;
 let currentFlashIndex = 0;
 
 let quizStep = 1, quizScore = 0, currentQuizItem = null;
-let currentAudioItem = null, audioScore = 0;
+let currentSpeakItem = null, speakScore = 0; // CORRIGÉ : Bonnes variables déclarées ici
 let selectedEnglishNode = null, selectedFrenchNode = null;
+let isProcessingMatch = false; // AJOUTÉ : Sécurité anti-clics abusifs
 
 // Variables pour le mode Contre-la-montre (Time Attack)
 let taTimerInterval = null;
+let taTimeout = null;
 let taTimeLeft = 60;
 let taScore = 0;
 let currentTAItem = null;
@@ -58,29 +60,49 @@ function updateLevelLockUI() {
     const btn3 = document.getElementById('btn-vlevel-3');
     const hint = document.getElementById('vocab-unlock-hint');
 
-    // Déblocage Niveau 2 (Niveau joueur 5)
+    if (!btn2 || !btn3 || !hint) return; // Sécurité si les éléments ne sont pas encore chargés
+
+    // --- GESTION DU NIVEAU 2 (Niveau joueur 5) ---
     if (playerLevel >= 5) {
         btn2.disabled = false;
         btn2.innerHTML = "Fruits Niv.2 (40)";
         if (selectedVocabularyLevel !== 2) {
             btn2.className = "p-2 rounded-lg font-bold text-xs bg-gray-100 text-brandBlue dark:bg-gray-700 dark:text-gray-200 border transition hover:border-brandOrange";
         }
+    } else {
+        // RE-VERROUILLAGE SI LE NIVEAU EST INSUFFISANT (ex: après reset)
+        btn2.disabled = true;
+        btn2.innerHTML = '<i class="fa-solid fa-lock text-[10px]"></i> Niv.2 (40)';
+        btn2.className = "p-2 rounded-lg font-bold text-xs bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500 border cursor-not-allowed flex items-center justify-center gap-1 transition";
+        if (selectedVocabularyLevel === 2) selectedVocabularyLevel = 1; // Sécurité : ramène l'élève au niveau 1
     }
     
-    // Déblocage Niveau 3 (Niveau joueur 10)
+    // --- GESTION DU NIVEAU 3 (Niveau joueur 10) ---
     if (playerLevel >= 10) {
         btn3.disabled = false;
         btn3.innerHTML = "Fruits Niv.3 (60)";
         if (selectedVocabularyLevel !== 3) {
             btn3.className = "p-2 rounded-lg font-bold text-xs bg-gray-100 text-brandBlue dark:bg-gray-700 dark:text-gray-200 border transition hover:border-brandOrange";
         }
+    } else {
+        // RE-VERROUILLAGE SI LE NIVEAU EST INSUFFISANT (ex: après reset)
+        btn3.disabled = true;
+        btn3.innerHTML = '<i class="fa-solid fa-lock text-[10px]"></i> Niv.3 (60)';
+        btn3.className = "p-2 rounded-lg font-bold text-xs bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500 border cursor-not-allowed flex items-center justify-center gap-1 transition";
+        if (selectedVocabularyLevel === 3) selectedVocabularyLevel = 1; // Sécurité : ramène l'élève au niveau 1
     }
 
-    // Mise à jour du texte d'aide pédagogique
+    // --- MISE À JOUR DU TEXTE D'AIDE PÉDAGOGIQUE ---
     if (playerLevel >= 10) {
         hint.innerText = "Félicitations ! Toutes les listes de vocabulaire sont accessibles.";
     } else if (playerLevel >= 5) {
         hint.innerText = "Objectif : Atteignez le niveau joueur 10 pour débloquer la liste ultime (Niveau 3) !";
+    } else {
+        hint.innerText = "Astuce : Atteignez le niveau joueur 5 pour débloquer le Niveau 2 !";
+    }
+    if (selectedVocabularyLevel === 1) {
+        const btn1 = document.getElementById('btn-vlevel-1');
+        if (btn1) btn1.className = "p-2 rounded-lg font-bold text-xs bg-brandBlue text-white border border-brandBlue transition";
     }
 }
 
@@ -359,7 +381,7 @@ function checkQuizAnswer(button, selected) {
     setTimeout(() => { quizStep++; generateQuizQuestion(); }, 1200);
 }
 
-// --- MODULE 4 : MODE CONTRE-LA-MONTRE (TIME ATTACK) ---
+// --- MODULE 4 : MODE CONTRE-LA-MONTRE (TIME ATTACK CORRIGÉ) ---
 function launchTimeAttack() {
     document.getElementById('quiz-mode-menu').classList.add('hidden');
     document.getElementById('quiz-timeattack-zone').classList.remove('hidden');
@@ -405,25 +427,35 @@ function generateTAQuestion() {
 }
 
 function checkTAAnswer(button, selected) {
+    document.querySelectorAll('#ta-options button').forEach(b => b.disabled = true);
+    
     if (selected === currentTAItem.fr) {
         taScore++;
         document.getElementById('ta-score').innerText = taScore;
         removeError(currentTAItem.en);
         processAnswerResult(true);
-        
-        // Validation du Badge Contre-la-montre à 20 points
-        if (taScore >= 20) checkAndUnlockBadge("time_20");
+        generateTAQuestion(); 
     } else {
+        button.className = "w-full bg-red-500 text-white p-3 rounded-xl font-medium text-left transition";
         registerError(currentTAItem);
         processAnswerResult(false);
+        // On stocke le timeout dans notre variable globale pour pouvoir l'annuler si nécessaire
+        taTimeout = setTimeout(() => { generateTAQuestion(); }, 400);
     }
-    generateTAQuestion(); // Enchaînement instantané sans temps mort
 }
 
 function stopTimeAttack(isFinishedFinished = false) {
     clearInterval(taTimerInterval);
+    if (taTimeout) clearTimeout(taTimeout); // FIX : Annule tout changement de question imminent
+    
     if (isFinishedFinished) {
         alert(`Fin du Chrono ! Votre élève a validé ${taScore} mots !`);
+        
+        // FIX : Vérification et déblocage du badge Chasseur de Chrono
+        if (taScore >= 20) {
+            checkAndUnlockBadge("time_20");
+        }
+
         if (taScore > highScores.timeattack) {
             highScores.timeattack = taScore;
             document.getElementById('stat-high-timeattack').innerText = taScore;
@@ -519,8 +551,9 @@ function startSpeechRecognition() {
     };
 }
 
-// --- MODULE 6 : MATCHING GAME V2 ---
+// --- MODULE 6 : MATCHING GAME V2 (CORRIGÉ ET SÉCURISÉ) ---
 function initMatching() {
+    isProcessingMatch = false; // Reset du verrou
     const grid = document.getElementById('matching-grid'); 
     if(!grid) return;
     grid.innerHTML = '';
@@ -530,7 +563,8 @@ function initMatching() {
     
     let englishCards = shuffled.map(f => ({ text: f.en, type: 'en', id: f.en }));
     let frenchCards = shuffled.map(f => ({ text: f.fr, type: 'fr', id: f.en }));
-    englishCards.sort(() => Math.random() - 0.5); frenchCards.sort(() => Math.random() - 0.5);
+    englishCards.sort(() => Math.random() - 0.5).slice(0,4); 
+    frenchCards.sort(() => Math.random() - 0.5).slice(0,4);
 
     for(let i=0; i < englishCards.length; i++) {
         const btnEn = document.createElement('button');
@@ -546,6 +580,8 @@ function initMatching() {
 }
 
 function handleMatchSelect(node) {
+    if (isProcessingMatch) return;
+
     if (node.dataset.type === 'en') {
         if (selectedEnglishNode) selectedEnglishNode.classList.remove('bg-brandBlue/20', 'dark:bg-brandBlue/40');
         selectedEnglishNode = node; selectedEnglishNode.classList.add('bg-brandBlue/20', 'dark:bg-brandBlue/40');
@@ -556,11 +592,24 @@ function handleMatchSelect(node) {
 
     if (selectedEnglishNode && selectedFrenchNode) {
         if (selectedEnglishNode.dataset.id === selectedFrenchNode.dataset.id) {
-            selectedEnglishNode.className = "bg-brandGreen text-white p-3 rounded-xl font-bold text-center pointer-events-none transition text-xs sm:text-sm";
-            selectedFrenchNode.className = "bg-brandGreen text-white p-3 rounded-xl font-bold text-center pointer-events-none transition text-xs sm:text-sm";
+            // FIX : Ajout de la classe 'matched-card' pour le suivi de la victoire
+            selectedEnglishNode.className = "bg-brandGreen text-white p-3 rounded-xl font-bold text-center pointer-events-none transition text-xs sm:text-sm matched-card";
+            selectedFrenchNode.className = "bg-brandGreen text-white p-3 rounded-xl font-bold text-center pointer-events-none transition text-xs sm:text-sm matched-card";
             removeError(selectedEnglishNode.dataset.id);
             processAnswerResult(true);
+            selectedEnglishNode = null; selectedFrenchNode = null;
+
+            // FIX : Détection de la victoire (8 cartes au total passées au vert)
+            const totalMatched = document.querySelectorAll('.matched-card').length;
+            if (totalMatched === 8) {
+                setTimeout(() => {
+                    triggerConfetti();
+                    alert("Félicitations ! Toutes les paires ont été associées avec succès !");
+                    initMatching(); // Relance automatiquement une nouvelle grille
+                }, 500);
+            }
         } else {
+            isProcessingMatch = true; 
             const eNode = selectedEnglishNode, fNode = selectedFrenchNode;
             eNode.className = "bg-red-500 text-white p-3 rounded-xl font-bold text-center transition text-xs sm:text-sm";
             fNode.className = "bg-red-500 text-white p-3 rounded-xl font-bold text-center transition text-xs sm:text-sm";
@@ -572,9 +621,10 @@ function handleMatchSelect(node) {
             setTimeout(() => {
                 eNode.className = "bg-white dark:bg-gray-800 border-2 border-brandBlue text-brandBlue dark:text-cyan-400 p-3 rounded-xl font-bold transition text-center text-xs sm:text-sm";
                 fNode.className = "bg-white dark:bg-gray-800 border-2 border-brandOrange text-brandOrange p-3 rounded-xl font-bold transition text-center text-xs sm:text-sm";
+                isProcessingMatch = false; 
             }, 800);
+            selectedEnglishNode = null; selectedFrenchNode = null;
         }
-        selectedEnglishNode = null; selectedFrenchNode = null;
     }
 }
 
