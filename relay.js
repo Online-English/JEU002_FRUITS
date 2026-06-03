@@ -2,6 +2,8 @@
 let slideshowTimeout = null;
 let isSlideshowActive = false;
 let currentFlashIndex = 0;
+let quizTimeout = null;  // AJOUTÉ : Sécurise les transitions du quiz classique
+let speakTimeout = null; // AJOUTÉ : Sécurise les transitions de la prononciation
 
 let quizStep = 1, quizScore = 0, currentQuizItem = null;
 let currentSpeakItem = null, speakScore = 0; // CORRIGÉ : Bonnes variables déclarées ici
@@ -110,6 +112,11 @@ function updateLevelLockUI() {
 function switchTab(event, tabName) {
     stopSlideshow();
     stopTimeAttack();
+    
+    // FIX : Annule les files d'attente du quiz et de la prononciation pour éviter les alertes fantômes
+    if (quizTimeout) clearTimeout(quizTimeout);
+    if (speakTimeout) clearTimeout(speakTimeout);
+    
     resetQuizToMenu();
 
     document.querySelectorAll('.tab-content').forEach(el => { el.classList.add('hidden'); el.classList.remove('active'); });
@@ -378,7 +385,7 @@ function checkQuizAnswer(button, selected) {
             if(b.innerText === currentQuizItem.fr) b.className = "w-full bg-brandGreen text-white p-3 rounded-xl font-medium text-left transition";
         });
     }
-    setTimeout(() => { quizStep++; generateQuizQuestion(); }, 1200);
+    quizTimeout = setTimeout(() => { quizStep++; generateQuizQuestion(); }, 1200);
 }
 
 // --- MODULE 4 : MODE CONTRE-LA-MONTRE (TIME ATTACK CORRIGÉ) ---
@@ -530,7 +537,7 @@ function startSpeechRecognition() {
             processAnswerResult(true);
             
             // Passe au mot suivant automatiquement après 2 secondes
-            setTimeout(() => generateSpeakQuestion(), 2000);
+            quizTimeout = setTimeout(() => { quizStep++; generateQuizQuestion(); }, 1200);
         } else {
             resultBox.classList.add('bg-red-100', 'text-red-700', 'dark:bg-red-900/30', 'dark:text-red-400');
             statusText.innerText = "Essaye encore ! (Vérifie le mot attendu)";
