@@ -533,11 +533,12 @@ function startSpeechRecognition() {
                 saveStats();
             }
 
-            removeError(currentSpeakItem.en); // Retiré du carnet si l'accent est correct
+            removeError(currentSpeakItem.en); 
             processAnswerResult(true);
             
             // Passe au mot suivant automatiquement après 2 secondes
-            quizTimeout = setTimeout(() => { quizStep++; generateQuizQuestion(); }, 1200);
+            speakTimeout = setTimeout(() => generateSpeakQuestion(), 2000);
+
         } else {
             resultBox.classList.add('bg-red-100', 'text-red-700', 'dark:bg-red-900/30', 'dark:text-red-400');
             statusText.innerText = "Essaye encore ! (Vérifie le mot attendu)";
