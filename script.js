@@ -1,6 +1,6 @@
 // --- BASE DE DONNÉES CONSOLIDÉE (60 Fruits sur 3 Niveaux) ---
 const fruitsData = [
-    // NIVEAU 1 (20 fruits de base - Accessible immédiatement)
+    // NIVEAU 1
     { en: "Apple", fr: "Pomme", emoji: "🍎", level: 1 },
     { en: "Banana", fr: "Banane", emoji: "🍌", level: 1 },
     { en: "Orange", fr: "Orange", emoji: "🍊", level: 1 },
@@ -22,7 +22,7 @@ const fruitsData = [
     { en: "Melon", fr: "Melon", emoji: "🍈", level: 1 },
     { en: "Fig", fr: "Figue", emoji: "🟤", level: 1 },
 
-    // NIVEAU 2 (20 fruits intermédiaires - Débloqué au Niveau joueur 5)
+    // NIVEAU 2
     { en: "Blackberry", fr: "Mûre", emoji: "🫐", level: 2 },
     { en: "Apricot", fr: "Abricot", emoji: "🍑", level: 2 },
     { en: "Grapefruit", fr: "Pamplemousse", emoji: "🍊", level: 2 },
@@ -44,7 +44,7 @@ const fruitsData = [
     { en: "Rhubarb", fr: "Rhubarbe", emoji: "🌿", level: 2 },
     { en: "Quince", fr: "Coing", emoji: "🍏", level: 2 },
 
-    // NIVEAU 3 (20 fruits avancés/exotiques - Débloqué au Niveau joueur 10)
+    // NIVEAU 3
     { en: "Starfruit", fr: "Carambole", emoji: "⭐", level: 3 },
     { en: "Jackfruit", fr: "Jacquier", emoji: "🍏", level: 3 },
     { en: "Durian", fr: "Durian", emoji: "🦔", level: 3 },
@@ -76,15 +76,15 @@ let unlockedBadges = [];
 let audioSpeed = 1.0;
 let filterOnlyFavs = false;
 let searchDirection = 'EN_FR';
-let globalAudioCtx = null; // Instance unique partagée 
+let globalAudioCtx = null; 
 let selectedVocabularyLevel = 1; 
 
 // --- CONFIGURATION DES BADGES ---
 const badgesDatabase = [
-    { id: "first_perfect", title: "Sans Faute !", desc: "Faire un 10/10 en QCM ou Writing", icon: "🏅", color: "bg-yellow-500" },
-    { id: "streak_15", title: "Inarrêtable", desc: "Atteindre une série de 15 bonnes réponses", icon: "🔥", color: "bg-orange-500" },
-    { id: "time_20", title: "Chasseur de Chrono", desc: "Marquer 20 points en Time Attack", icon: "⚡", color: "bg-cyan-500" },
-    { id: "polyglotte", title: "Polyglotte", desc: "Débloquer le niveau 2 de vocabulaire", icon: "🗣️", color: "bg-purple-500" }
+    { id: "first_perfect", title: "Perfect Score !", desc: "Décrocher un 10/10 impérial en QCM", icon: "👑", color: "bg-gradient-to-r from-amber-400 to-amber-600" },
+    { id: "streak_15", title: "En Feu 🔥", desc: "Aligner une série folle de 15 bonnes réponses", icon: "⚡", color: "bg-gradient-to-r from-brandOrange to-red-600" },
+    { id: "time_20", title: "Speedrunner", desc: "Valider 20 points en Contre-la-montre", icon: "⏱️", color: "bg-gradient-to-r from-cyan-400 to-blue-600" },
+    { id: "polyglotte", title: "Hyper-Grand Master", desc: "Atteindre le niveau 5 de joueur", icon: "🧠", color: "bg-gradient-to-r from-cyberPurple to-indigo-600" }
 ];
 
 // --- ALGORITHME DE RÉPÉTITION ESPACÉE ---
@@ -108,47 +108,34 @@ function checkAndUnlockBadge(badgeId) {
     }
 }
 
-// --- MODULE AUDIO DE HAUTE PRÉCISION (CORRIGÉ) ---
+// --- MODULE AUDIO ---
 let preferredVoice = null;
 
-// Fonction de sélection de la meilleure voix disponible sur l'appareil
 function initVoices() {
     if (!('speechSynthesis' in window)) return;
-    
     const voices = window.speechSynthesis.getVoices();
-    if (voices.length === 0) return; // Le navigateur n'est pas encore prêt
+    if (voices.length === 0) return;
 
-    // Stratégie de sélection en 3 étapes :
-    // 1. On cherche une voix anglaise moderne (Google, Natural, Neural ou Premium)
     let bestVoice = voices.find(voice => 
         voice.lang.toLowerCase().startsWith('en') && 
         (voice.name.includes('Google') || voice.name.includes('Natural') || voice.name.includes('Neural') || voice.name.includes('Premium'))
     );
 
-    // 2. Si pas trouvé, on cherche une voix anglaise qui n'est PAS une vieille voix "Desktop" de Microsoft
     if (!bestVoice) {
-        bestVoice = voices.find(voice => 
-            voice.lang.toLowerCase().startsWith('en') && !voice.name.includes('Desktop')
-        );
+        bestVoice = voices.find(voice => voice.lang.toLowerCase().startsWith('en') && !voice.name.includes('Desktop'));
     }
-
-    // 3. En dernier recours, on prend la première voix anglaise standard qui vient
     if (!bestVoice) {
         bestVoice = voices.find(voice => voice.lang.toLowerCase().startsWith('en'));
     }
 
-    // On mémorise la voix pour éviter de refaire la recherche à chaque clic
-    if (bestVoice) {
-        preferredVoice = bestVoice;
-    }
+    if (bestVoice) preferredVoice = bestVoice;
 }
 
-// Écouteur crucial : déclenché dès que le navigateur a fini de charger sa base de données vocales
 if ('speechSynthesis' in window) {
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
         window.speechSynthesis.onvoiceschanged = initVoices;
     }
-    initVoices(); // Premier essai immédiat au cas où elles seraient déjà prêtes
+    initVoices();
 }
 
 function setAudioSpeed(speed) {
@@ -157,54 +144,39 @@ function setAudioSpeed(speed) {
     const btnSlow = document.getElementById('speed-slow');
     if (btnNormal && btnSlow) {
         if (speed === 1.0) {
-            btnNormal.className = "px-2 py-1 bg-brandBlue text-white rounded font-bold";
-            btnSlow.className = "px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded flex items-center gap-1";
+            btnNormal.className = "px-3 py-1.5 bg-gradient-to-r from-brandBlue to-cyberPurple text-white rounded-xl font-extrabold shadow-md shadow-brandBlue/20 transform scale-105 transition duration-150";
+            btnSlow.className = "px-3 py-1.5 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl flex items-center gap-1 font-bold transition duration-150";
         } else {
-            btnNormal.className = "px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded font-bold";
-            btnSlow.className = "px-2 py-1 bg-brandBlue text-white rounded flex items-center gap-1";
+            btnNormal.className = "px-3 py-1.5 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-bold transition duration-150";
+            btnSlow.className = "px-3 py-1.5 bg-gradient-to-r from-brandBlue to-cyberPurple text-white rounded-xl flex items-center gap-1 font-extrabold shadow-md shadow-brandBlue/20 transform scale-105 transition duration-150";
         }
     }
 }
 
 function playAudio(text) {
     if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // Stoppe net toute lecture en cours
-        
+        window.speechSynthesis.cancel(); 
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'en-US';
         utterance.rate = audioSpeed;
 
-        // Si la voix n'a pas pu être choisie au démarrage, on fait une tentative de secours
         if (!preferredVoice) initVoices();
-
-        if (preferredVoice) {
-            utterance.voice = preferredVoice;
-        }
+        if (preferredVoice) utterance.voice = preferredVoice;
 
         window.speechSynthesis.speak(utterance);
     } else {
-        // Fallback ultime si l'appareil ne supporte aucune synthèse vocale native
         const encodedText = encodeURIComponent(text.toLowerCase());
         const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodedText}`;
         const audio = new Audio(audioUrl);
         audio.playbackRate = audioSpeed;
-        audio.play().catch(e => console.log("Audio playback failed:", e));
+        audio.play().catch(e => console.log("Audio failure:", e));
     }
 }
 
-
 function playSoundEffect(type) {
     if (!window.AudioContext && !window.webkitAudioContext) return;
-    
-    // Initialisation paresseuse au premier clic utilisateur
-    if (!globalAudioCtx) {
-        globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    
-    // Sort de la mise en veille si le navigateur avait bloqué le flux audio
-    if (globalAudioCtx.state === 'suspended') {
-        globalAudioCtx.resume();
-    }
+    if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
 
     const osc = globalAudioCtx.createOscillator();
     const gain = globalAudioCtx.createGain();
@@ -212,30 +184,30 @@ function playSoundEffect(type) {
     gain.connect(globalAudioCtx.destination);
 
     if (type === 'success') {
-        osc.frequency.setValueAtTime(523.25, globalAudioCtx.currentTime);
-        osc.frequency.setValueAtTime(659.25, globalAudioCtx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.1, globalAudioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.3);
-        osc.start(); osc.stop(globalAudioCtx.currentTime + 0.3);
+        osc.frequency.setValueAtTime(587.33, globalAudioCtx.currentTime); // D5
+        osc.frequency.setValueAtTime(880.00, globalAudioCtx.currentTime + 0.08); // A5
+        gain.gain.setValueAtTime(0.12, globalAudioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.35);
+        osc.start(); osc.stop(globalAudioCtx.currentTime + 0.35);
     } else if (type === 'fail') {
-        osc.frequency.setValueAtTime(196.00, globalAudioCtx.currentTime);
-        osc.frequency.setValueAtTime(146.83, globalAudioCtx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(220.00, globalAudioCtx.currentTime); 
+        osc.frequency.setValueAtTime(164.81, globalAudioCtx.currentTime + 0.12); 
         gain.gain.setValueAtTime(0.15, globalAudioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.4);
-        osc.start(); osc.stop(globalAudioCtx.currentTime + 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.45);
+        osc.start(); osc.stop(globalAudioCtx.currentTime + 0.45);
     }
 }
 
 function triggerConfetti() {
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 45; i++) {
         const confetti = document.createElement('div');
         confetti.className = 'confetti';
         confetti.style.left = Math.random() * 100 + 'vw';
-        confetti.style.backgroundColor = ['#F58634', '#52B788', '#1C3D5A', '#FFD166'][Math.floor(Math.random() * 4)];
-        confetti.style.transform = `scale(${Math.random() * 0.8 + 0.5})`;
-        confetti.style.animationDelay = Math.random() * 1.2 + 's';
+        confetti.style.backgroundColor = ['#6366F1', '#FF2A7A', '#10B981', '#FFD166', '#A855F7'][Math.floor(Math.random() * 5)];
+        confetti.style.transform = `scale(${Math.random() * 0.9 + 0.5})`;
+        confetti.style.animationDelay = Math.random() * 1.0 + 's';
         document.body.appendChild(confetti);
-        setTimeout(() => confetti.remove(), 4000);
+        setTimeout(() => confetti.remove(), 3500);
     }
 }
 
@@ -264,20 +236,20 @@ function updateLevelAndTitle() {
     
     if (levelEl) levelEl.innerText = pLevel;
 
-    let title = "Novice des Fruits";
-    if (pLevel >= 2) title = "Apprenti Fruitier";
-    if (pLevel >= 3) title = "Verger Connaisseur";
+    let title = "Novice des Fruits 🟢";
+    if (pLevel >= 2) title = "Apprenti Fruitier 🎯";
+    if (pLevel >= 3) title = "Verger Connaisseur 💎";
     if (pLevel >= 5) {
-        title = "Expert Botanique";
+        title = "Expert Botanique 🧠";
         checkAndUnlockBadge("polyglotte"); 
     }
-    if (pLevel >= 10) title = "Maître des Vergers";
+    if (pLevel >= 10) title = "Maître des Vergers 🔥";
 
     if (titleEl) titleEl.innerText = title;
     if (typeof updateLevelLockUI === 'function') updateLevelLockUI();
 }
 
-// --- MODULE DARK MODE (AJOUTÉ) ---
+// --- MODULE DARK MODE ---
 function toggleDarkMode() {
     const isDark = document.documentElement.classList.toggle('dark');
     localStorage.setItem('oe_dark_mode', isDark);
@@ -287,19 +259,15 @@ function toggleDarkMode() {
     }
 }
 
-// --- RÉINITIALISATION DES STATISTIQUES (AJOUTÉ) ---
+// --- RÉINITIALISATION DES STATISTIQUES ---
 function resetStats() {
-    if (confirm("Êtes-vous sûr de vouloir réinitialiser toutes vos statistiques et votre progression ?")) {
+    if (confirm("🚨 Tu es sûr de vouloir effacer tes scores, tes XP et tes badges pour tout recommencer à zéro ?")) {
         const keysToRemove = ['oe_total_points', 'oe_high_quiz', 'oe_high_speak', 'oe_high_timeattack', 'oe_max_streak', 'oe_fav_fruits', 'oe_error_history', 'oe_unlocked_badges'];
         keysToRemove.forEach(key => localStorage.removeItem(key));
 
-        totalPoints = 0;
-        highScores = { quiz: 0, speak: 0, timeattack: 0 };
-        maxStreak = 0;
-        currentStreak = 0;
-        errorHistory = [];
-        unlockedBadges = [];
-        favoriteFruits = [];
+        totalPoints = 0; highScores = { quiz: 0, speak: 0, timeattack: 0 };
+        maxStreak = 0; currentStreak = 0;
+        errorHistory = []; unlockedBadges = []; favoriteFruits = [];
 
         document.getElementById('total-points').innerText = totalPoints;
         document.getElementById('streak-count').innerText = currentStreak;
@@ -315,7 +283,7 @@ function resetStats() {
         if (typeof renderBadgesUI === 'function') renderBadgesUI();
         if (typeof renderErrorHistory === 'function') renderErrorHistory();
 
-        alert("Statistiques réinitialisées avec succès !");
+        alert("Compte remis à zéro ! C'est reparti pour le grind ! 🦾");
     }
 }
 
